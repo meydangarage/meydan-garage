@@ -1,6 +1,153 @@
 "use client";
 
+import { useEffect, useState } from "react";
+
+
+type CartItem = {
+  id: string;
+  name: string;
+  price: number;
+  quantity: number;
+  image: string;
+  category: string;
+};
+
+type Product = {
+  id: string;
+  name: string;
+  price: number;
+  image: string;
+  category: string;
+};
+
+const CART_KEY = "meydan-garage-cart-v1";
+
+const products: Product[] = [
+  {
+    id: "arac-ici-koku",
+    name: "Araç İçi Koku Bombası",
+    price: 1000,
+    image: "/arac-ici-koku.jpeg",
+    category: "KOKU",
+  },
+  {
+    id: "sprey-koku",
+    name: "Sprey Koku",
+    price: 400,
+    image: "/sprey-koku.jpeg",
+    category: "KOKU",
+  },
+  {
+    id: "motor-temizleyici-sprey",
+    name: "Motor Temizleyici Sprey",
+    price: 700,
+    image: "/motor-temizleyici-sprey.jpeg",
+    category: "BAKIM",
+  },
+  {
+    id: "cam-suyu-sabunu",
+    name: "Cam Suyu Sabunu",
+    price: 100,
+    image: "/cam-suyu-sabunu.jpeg",
+    category: "TEMİZLİK",
+  },
+  {
+    id: "canta-50",
+    name: "50 cm Bagaj Çantası",
+    price: 2250,
+    image: "/canta-50.jpeg",
+    category: "BAGAJ & DÜZEN",
+  },
+  {
+    id: "canta-70",
+    name: "70 cm Bagaj Çantası",
+    price: 2750,
+    image: "/canta-70.jpeg",
+    category: "BAGAJ & DÜZEN",
+  },
+  {
+    id: "canta-90",
+    name: "90 cm Bagaj Çantası",
+    price: 3250,
+    image: "/canta-90.jpeg",
+    category: "BAGAJ & DÜZEN",
+  },
+  {
+    id: "silecek",
+    name: "Silecek",
+    price: 750,
+    image: "/silecek.jpeg",
+    category: "ARAÇ BAKIM",
+  },
+];
+
+function readCart(): CartItem[] {
+  if (typeof window === "undefined") return [];
+
+  try {
+    const raw = window.localStorage.getItem(CART_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeCart(items: CartItem[]) {
+  window.localStorage.setItem(CART_KEY, JSON.stringify(items));
+  window.dispatchEvent(new Event("meydan-cart-updated"));
+}
+
 export default function Home() {
+  const [cartCount, setCartCount] = useState(0);
+  const [addedProductId, setAddedProductId] = useState("");
+
+  function refreshCartCount() {
+    const items = readCart();
+    const count = items.reduce((total, item) => total + item.quantity, 0);
+    setCartCount(count);
+  }
+
+  useEffect(() => {
+    refreshCartCount();
+
+    const refresh = () => refreshCartCount();
+
+    window.addEventListener("storage", refresh);
+    window.addEventListener("meydan-cart-updated", refresh);
+
+    return () => {
+      window.removeEventListener("storage", refresh);
+      window.removeEventListener("meydan-cart-updated", refresh);
+    };
+  }, []);
+
+  function addToCart(product: Product) {
+    const items = readCart();
+    const existing = items.find((item) => item.id === product.id);
+
+    if (existing) {
+      existing.quantity += 1;
+    } else {
+      items.push({
+        id: product.id,
+        name: product.name,
+        price: product.price,
+        quantity: 1,
+        image: product.image,
+        category: product.category,
+      });
+    }
+
+    writeCart(items);
+    refreshCartCount();
+
+    setAddedProductId(product.id);
+
+    window.setTimeout(() => {
+      setAddedProductId("");
+    }, 1200);
+  }
+
   return (
     <main className="min-h-screen bg-black text-white">
 
@@ -39,6 +186,13 @@ export default function Home() {
             </a>
 
             <a
+              href="#urunler"
+              className="text-[11px] tracking-[0.18em] text-white/50 transition hover:text-white"
+            >
+              ÜRÜNLER
+            </a>
+
+            <a
               href="/arac-sec"
               className="text-[11px] tracking-[0.18em] text-white/50 transition hover:text-white"
             >
@@ -50,6 +204,13 @@ export default function Home() {
               className="text-[11px] tracking-[0.18em] text-white/50 transition hover:text-white"
             >
               İLETİŞİM
+            </a>
+
+            <a
+              href="/sepet"
+              className="rounded-full border border-white/15 px-4 py-2 text-[10px] tracking-[0.16em] text-white/70 transition hover:border-white/35 hover:bg-white hover:text-black"
+            >
+              SEPET ({cartCount})
             </a>
           </nav>
 
@@ -101,6 +262,156 @@ export default function Home() {
         </div>
 
         <div className="absolute bottom-8 left-1/2 h-12 w-px -translate-x-1/2 bg-gradient-to-b from-white/30 to-transparent" />
+      </section>
+
+      {/* =========================
+          DİĞER ÜRÜNLERİMİZ
+      ========================= */}
+      <section
+        id="urunler"
+        className="scroll-mt-24 border-t border-white/10 bg-[#050505]"
+      >
+        <div className="mx-auto max-w-7xl px-6 py-24">
+
+          {/* BAŞLIK */}
+          <div className="mb-14 flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
+            <div>
+              <p className="text-xs tracking-[0.35em] text-white/30">
+                MEYDAN GARAGE
+              </p>
+
+              <h2 className="mt-5 text-4xl font-semibold tracking-tight sm:text-5xl">
+                Diğer Ürünlerimiz
+              </h2>
+
+              <p className="mt-5 max-w-2xl text-sm leading-7 text-white/40">
+                Aracınız için bagaj düzeninden temizlik ve bakım ürünlerine kadar
+                günlük kullanımınızı tamamlayan seçili ürünleri keşfedin.
+              </p>
+            </div>
+
+            <a
+              href="/sepet"
+              className="inline-flex w-fit items-center gap-3 rounded-full border border-white/15 px-6 py-3 text-xs font-medium tracking-[0.14em] text-white/70 transition hover:border-white/35 hover:bg-white hover:text-black"
+            >
+              SEPETİ GÖR ({cartCount})
+              <span>→</span>
+            </a>
+          </div>
+
+          {/* ÜST VİTRİN */}
+          <div className="grid gap-5 lg:grid-cols-12">
+
+            {/* BAGAJ ÇANTALARI - BÜYÜK KART */}
+            <div className="group relative min-h-[520px] overflow-hidden rounded-[30px] border border-white/10 bg-[#111111] lg:col-span-7">
+              <img
+                src="/canta-90.jpeg"
+                alt="Meydan Garage bagaj çantaları"
+                className="absolute inset-0 h-full w-full object-cover opacity-75 transition duration-700 group-hover:scale-[1.035] group-hover:opacity-90"
+              />
+
+              <div className="absolute inset-0 bg-gradient-to-t from-black via-black/25 to-black/5" />
+
+              <div className="absolute left-0 top-0 p-7">
+                <span className="rounded-full border border-white/15 bg-black/30 px-4 py-2 text-[10px] tracking-[0.25em] text-white/65 backdrop-blur-sm">
+                  BAGAJ & DÜZEN
+                </span>
+              </div>
+
+              <div className="absolute inset-x-0 bottom-0 p-7 sm:p-9">
+                <p className="text-[10px] tracking-[0.28em] text-white/45">
+                  50 • 70 • 90 CM
+                </p>
+
+                <h3 className="mt-3 text-3xl font-semibold sm:text-4xl">
+                  Bagaj Çantaları
+                </h3>
+
+                <p className="mt-3 max-w-lg text-sm leading-6 text-white/55">
+                  Farklı boy seçenekleriyle bagajınızı daha düzenli ve kullanışlı hale getirin.
+                </p>
+
+                <p className="mt-4 text-sm font-medium text-white/80">
+                  50 cm: 2.250 TL · 70 cm: 2.750 TL · 90 cm: 3.250 TL
+                </p>
+
+                <div className="mt-6 flex flex-wrap gap-2">
+                  {["50 CM", "70 CM", "90 CM"].map((size) => (
+                    <span
+                      key={size}
+                      className="rounded-full border border-white/15 bg-black/25 px-4 py-2 text-[10px] tracking-[0.18em] text-white/65 backdrop-blur-sm"
+                    >
+                      {size}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* SAĞ VİTRİN */}
+            <div className="grid gap-5 sm:grid-cols-2 lg:col-span-5">
+
+              <ProductCard
+                product={products[0]}
+                added={addedProductId === products[0].id}
+                onAdd={addToCart}
+              />
+
+              <ProductCard
+                product={products[1]}
+                added={addedProductId === products[1].id}
+                onAdd={addToCart}
+              />
+
+              <ProductCard
+                product={products[2]}
+                added={addedProductId === products[2].id}
+                onAdd={addToCart}
+              />
+
+              <ProductCard
+                product={products[3]}
+                added={addedProductId === products[3].id}
+                onAdd={addToCart}
+              />
+
+            </div>
+          </div>
+
+          {/* ALT ÜRÜNLER */}
+          <div className="mt-5 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+
+            <ProductCard
+              product={products[4]}
+              added={addedProductId === products[4].id}
+              onAdd={addToCart}
+              compact
+            />
+
+            <ProductCard
+              product={products[5]}
+              added={addedProductId === products[5].id}
+              onAdd={addToCart}
+              compact
+            />
+
+            <ProductCard
+              product={products[6]}
+              added={addedProductId === products[6].id}
+              onAdd={addToCart}
+              compact
+            />
+
+            <ProductCard
+              product={products[7]}
+              added={addedProductId === products[7].id}
+              onAdd={addToCart}
+              compact
+            />
+
+          </div>
+
+        </div>
       </section>
 
       {/* =========================
@@ -526,3 +837,66 @@ function FeatureCard({
     </div>
   );
 }
+
+/* =========================
+   PRODUCT CARD
+========================= */
+
+function ProductCard({
+  product,
+  added,
+  onAdd,
+  compact = false,
+}: {
+  product: Product;
+  added: boolean;
+  onAdd: (product: Product) => void;
+  compact?: boolean;
+}) {
+  return (
+    <div
+      className={`group relative overflow-hidden rounded-[26px] border border-white/10 bg-[#111111] ${
+        compact ? "min-h-[360px]" : "min-h-[270px]"
+      }`}
+    >
+      <img
+        src={product.image}
+        alt={product.name}
+        className="absolute inset-0 h-full w-full object-cover opacity-70 transition duration-700 group-hover:scale-[1.05] group-hover:opacity-90"
+      />
+
+      <div className="absolute inset-0 bg-gradient-to-t from-black via-black/30 to-transparent" />
+
+      <div className="absolute inset-x-0 bottom-0 p-6">
+        <p className="text-[9px] tracking-[0.25em] text-white/45">
+          {product.category}
+        </p>
+
+        <h3
+          className={`${compact ? "text-lg" : "text-xl"} mt-2 font-medium leading-tight`}
+        >
+          {product.name}
+        </h3>
+
+        <div className="mt-4 flex items-center justify-between gap-4">
+          <span className="text-lg font-semibold">
+            {product.price.toLocaleString("tr-TR")} TL
+          </span>
+
+          <button
+            type="button"
+            onClick={() => onAdd(product)}
+            className={`rounded-full px-4 py-2 text-[10px] font-semibold tracking-[0.1em] transition ${
+              added
+                ? "bg-[#25D366] text-black"
+                : "bg-white text-black hover:scale-[1.03] hover:bg-white/90"
+            }`}
+          >
+            {added ? "EKLENDİ ✓" : "SEPETE EKLE"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+

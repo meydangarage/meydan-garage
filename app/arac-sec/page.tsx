@@ -7,6 +7,35 @@ type ColorOption = {
   color: string;
 };
 
+
+type CartItem = {
+  id: string;
+  name: string;
+  price: number;
+  quantity: number;
+  image: string;
+  category: string;
+  details?: string[];
+};
+
+const CART_KEY = "meydan-garage-cart-v1";
+
+function readCart(): CartItem[] {
+  if (typeof window === "undefined") return [];
+
+  try {
+    const raw = window.localStorage.getItem(CART_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeCart(items: CartItem[]) {
+  window.localStorage.setItem(CART_KEY, JSON.stringify(items));
+  window.dispatchEvent(new Event("meydan-cart-updated"));
+}
+
 /* =========================
    MARKALAR
 ========================= */
@@ -292,7 +321,6 @@ const borderColors: ColorOption[] = [
 
 /* =========================
    İPLİK RENKLERİ
-
    SADECE SEÇİLİR
    GÖRSELDE DEĞİŞMEZ
 ========================= */
@@ -331,9 +359,8 @@ const threadColors: ColorOption[] = [
 
 /* =========================
    TOPUKLUK RENKLERİ
-
-   SADECE SEÇİLİR
-   GÖRSELDE DEĞİŞMEZ
+   SEÇİLDİĞİNDE ÖNİZLEME
+   GÖRSELİNDE DE UYGULANIR
 ========================= */
 
 const heelColors: ColorOption[] = [
@@ -345,9 +372,23 @@ const heelColors: ColorOption[] = [
   { name: "Kırmızı", color: "#9d1f27" },
 ];
 
-const BASE_PRICE = 0;
+const BASE_PRICE = 2000;
+const LOGO_UNIT_PRICE = 150;
+const HEEL_PRICE = 300;
+const TRUNK_MAT_PRICE = 1250;
 
-const WHATSAPP_NUMBER = "905529992307";
+/* =========================
+   TOPUKLUK KONUMU
+========================= */
+
+/*
+  Üstteki sürücü paspasında işaretlediğin alan için ayarlandı.
+  X: sağ/sol, Y: yukarı/aşağı, WIDTH: topukluk genişliği.
+*/
+const HEEL_X_PERCENT = 0.185;
+const HEEL_Y_PERCENT = 0.185;
+const HEEL_WIDTH_PERCENT = 0.245;
+
 
 /* =========================
    YARDIMCILAR
@@ -363,16 +404,94 @@ function hexToRgb(hex: string) {
   };
 }
 
-function getColorName(
-  colors: ColorOption[],
-  selectedColor: string
-) {
-  return (
-    colors.find(
-      (item) => item.color === selectedColor
-    )?.name || "-"
-  );
+function getColorName(colors: ColorOption[], selectedColor: string) {
+  return colors.find((item) => item.color === selectedColor)?.name || "-";
 }
+
+/* =========================
+   TOPUKLUK RENKLENDİRME
+   SADECE SİYAH / KOYU KAUÇUK
+   BÖLÜMLERİ BOYAR.
+   METAL KISIM AYNI KALIR.
+========================= */
+
+function buildHeelOverlay(
+  image: HTMLImageElement,
+  targetHex: string
+): HTMLCanvasElement {
+  const off = document.createElement("canvas");
+
+  off.width = image.naturalWidth;
+  off.height = image.naturalHeight;
+
+  const octx = off.getContext("2d", {
+    willReadFrequently: true,
+  });
+
+  if (!octx) return off;
+
+  octx.clearRect(0, 0, off.width, off.height);
+  octx.drawImage(image, 0, 0, off.width, off.height);
+
+  const imageData = octx.getImageData(0, 0, off.width, off.height);
+  const data = imageData.data;
+  const rgb = hexToRgb(targetHex);
+
+  const targetBrightness = (rgb.r + rgb.g + rgb.b) / 3;
+
+  for (let p = 0; p < data.length; p += 4) {
+    const r = data[p];
+    const g = data[p + 1];
+    const b = data[p + 2];
+    const a = data[p + 3];
+
+    if (a < 10) continue;
+
+    const brightness =
+      0.2126 * r +
+      0.7152 * g +
+      0.0722 * b;
+
+    const max = Math.max(r, g, b);
+    const min = Math.min(r, g, b);
+    const chroma = max - min;
+
+    /*
+      Metal yüzey de gri olduğu için yalnızca gerçekten
+      koyu kalan kauçuk yuvaları seçiyoruz.
+    */
+    const isRubber =
+      brightness < 68 &&
+      chroma < 34;
+
+    if (!isRubber) continue;
+
+    /*
+      Siyah seçildiğinde orijinal siyah dokuyu aynen koru.
+    */
+    if (targetBrightness < 35) {
+      continue;
+    }
+
+    /*
+      Kauçuk dokudaki ışık/gölgeyi koruyup seçilen rengi
+      doğal biçimde uygula.
+    */
+    const texture = Math.max(
+      0.52,
+      Math.min(0.96, 0.52 + brightness / 150)
+    );
+
+    data[p] = Math.min(255, Math.round(rgb.r * texture));
+    data[p + 1] = Math.min(255, Math.round(rgb.g * texture));
+    data[p + 2] = Math.min(255, Math.round(rgb.b * texture));
+  }
+
+  octx.putImageData(imageData, 0, 0);
+
+  return off;
+}
+
 
 /* =========================
    RENK SEÇİCİ
@@ -391,22 +510,17 @@ function ColorSelector({
 }) {
   return (
     <div>
-      <p className="mb-3 text-sm text-white/60">
-        {title}
-      </p>
+      <p className="mb-3 text-sm text-white/60">{title}</p>
 
       <div className="flex flex-wrap gap-3">
         {colors.map((item) => {
-          const active =
-            selected === item.color;
+          const active = selected === item.color;
 
           return (
             <button
               key={item.name}
               type="button"
-              onClick={() =>
-                onSelect(item.color)
-              }
+              onClick={() => onSelect(item.color)}
               className={`flex items-center gap-2 rounded-xl border px-3 py-2 transition ${
                 active
                   ? "border-white bg-white/10"
@@ -420,9 +534,7 @@ function ColorSelector({
                 }}
               />
 
-              <span className="text-xs text-white/70">
-                {item.name}
-              </span>
+              <span className="text-xs text-white/70">{item.name}</span>
             </button>
           );
         })}
@@ -436,55 +548,51 @@ function ColorSelector({
 ========================= */
 
 export default function VehicleSelector() {
-  const canvasRef =
-    useRef<HTMLCanvasElement | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const imageRef = useRef<HTMLImageElement | null>(null);
+  const heelImageRef = useRef<HTMLImageElement | null>(null);
 
-  const imageRef =
-    useRef<HTMLImageElement | null>(null);
-
-  const [brand, setBrand] =
-    useState("");
-
-  const [selectedModel, setSelectedModel] =
-    useState("");
-
-  const [other, setOther] =
-    useState(false);
-
-  const [customBrand, setCustomBrand] =
-    useState("");
-
-  const [customModel, setCustomModel] =
-    useState("");
-
-  const [modelYear, setModelYear] =
-    useState("");
-
-  const [bodyType, setBodyType] =
-    useState("");
-
-  const [designMode, setDesignMode] =
-    useState(false);
+  const [brand, setBrand] = useState("");
+  const [selectedModel, setSelectedModel] = useState("");
+  const [other, setOther] = useState(false);
+  const [customBrand, setCustomBrand] = useState("");
+  const [customModel, setCustomModel] = useState("");
+  const [modelYear, setModelYear] = useState("");
+  const [bodyType, setBodyType] = useState("");
+  const [designMode, setDesignMode] = useState(false);
 
   /* TASARIM */
 
-  const [evaColor, setEvaColor] =
-    useState("#111111");
+  const [evaColor, setEvaColor] = useState("#111111");
+  const [borderColor, setBorderColor] = useState("#111111");
+  const [threadColor, setThreadColor] = useState("#151515");
+  const [logoEnabled, setLogoEnabled] = useState(false);
+  const [logoQuantity, setLogoQuantity] = useState(1);
+  const [trunkMatEnabled, setTrunkMatEnabled] = useState(false);
+  const [heelEnabled, setHeelEnabled] = useState(false);
+  const [heelColor, setHeelColor] = useState("#171717");
 
-  const [borderColor, setBorderColor] =
-    useState("#111111");
+  const [cartCount, setCartCount] = useState(0);
+  const [addedToCart, setAddedToCart] = useState(false);
 
-  const [threadColor, setThreadColor] =
-    useState("#151515");
+  function refreshCartCount() {
+    const items = readCart();
+    setCartCount(items.reduce((total, item) => total + item.quantity, 0));
+  }
 
-  const [logoEnabled, setLogoEnabled] =
-    useState(false);
+  useEffect(() => {
+    refreshCartCount();
 
-  const [heelEnabled, setHeelEnabled] =
-    useState(false);
+    const refresh = () => refreshCartCount();
 
-  const [heelColor, setHeelColor] =
-    useState("#171717");
+    window.addEventListener("storage", refresh);
+    window.addEventListener("meydan-cart-updated", refresh);
+
+    return () => {
+      window.removeEventListener("storage", refresh);
+      window.removeEventListener("meydan-cart-updated", refresh);
+    };
+  }, []);
 
   /* =========================
      PASPAS GÖRSELİ
@@ -494,17 +602,37 @@ export default function VehicleSelector() {
     if (!designMode) return;
 
     const image = new Image();
-
     image.src = "/paspas.png";
 
     image.onload = () => {
       imageRef.current = image;
 
-      drawPreview(
-        image,
-        evaColor,
-        borderColor
-      );
+      drawPreview(image, evaColor, borderColor, heelEnabled, heelColor);
+    };
+  }, [designMode]);
+
+  /* =========================
+     TOPUKLUK GÖRSELİ
+  ========================= */
+
+  useEffect(() => {
+    if (!designMode) return;
+
+    const heelImage = new Image();
+    heelImage.src = "/topukluk.png";
+
+    heelImage.onload = () => {
+      heelImageRef.current = heelImage;
+
+      if (imageRef.current) {
+        drawPreview(
+          imageRef.current,
+          evaColor,
+          borderColor,
+          heelEnabled,
+          heelColor
+        );
+      }
     };
   }, [designMode]);
 
@@ -512,27 +640,19 @@ export default function VehicleSelector() {
     if (!designMode) return;
 
     const image = imageRef.current;
-
     if (!image) return;
 
-    drawPreview(
-      image,
-      evaColor,
-      borderColor
-    );
-  }, [
-    designMode,
-    evaColor,
-    borderColor,
-  ]);
+    drawPreview(image, evaColor, borderColor, heelEnabled, heelColor);
+  }, [designMode, evaColor, borderColor, heelEnabled, heelColor]);
 
   function drawPreview(
     image: HTMLImageElement,
     selectedEva: string,
-    selectedBorder: string
+    selectedBorder: string,
+    heelOn: boolean,
+    selectedHeel: string
   ) {
     const canvas = canvasRef.current;
-
     if (!canvas) return;
 
     const ctx = canvas.getContext("2d", {
@@ -547,13 +667,7 @@ export default function VehicleSelector() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
 
-    const imageData = ctx.getImageData(
-      0,
-      0,
-      canvas.width,
-      canvas.height
-    );
-
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
     const original = new Uint8ClampedArray(imageData.data);
     const data = imageData.data;
 
@@ -591,8 +705,6 @@ export default function VehicleSelector() {
       const chroma = max - min;
       const brightness = (r + g + b) / 3;
 
-      // Kahverengi / turuncu / kırmızı EVA yüzeyi.
-      // Kırmızıya kaçan petek detaylarını da özellikle dahil ediyoruz.
       const warmEva =
         r > 62 &&
         r > g * 1.02 &&
@@ -674,19 +786,12 @@ export default function VehicleSelector() {
       return current;
     }
 
-    // Petek delikleri ve küçük renk boşluklarını kapat.
     const closeAmount = Math.max(2, Math.round(width / 450));
     evaMask = erode(dilate(evaMask, closeAmount), closeAmount);
-
-    // EVA yüzeyini çok az genişletiyoruz ki kırmızı/turuncu saçak kalmasın.
     evaMask = dilate(evaMask, 1);
 
     /*
       BİYE MASKESİ
-
-      Biyeyi artık "koyu piksel gördüm, boya" mantığıyla yapmıyoruz.
-      EVA yüzeyinin etrafından gerçek bir şerit çıkarıyoruz.
-      Bu yüzden kalemle çizilmiş gibi ince/kopuk görünmüyor.
     */
 
     const borderWidth = Math.max(3, Math.round(width / 180));
@@ -709,11 +814,8 @@ export default function VehicleSelector() {
       const min = Math.min(r, g, b);
       const chroma = max - min;
 
-      // Açık gri arka planı kesinlikle biyeye katma.
-      // Gerçek biyenin koyu/orta tonlarını tut.
       const looksLikeRealEdge =
-        brightness < 155 &&
-        !(brightness > 105 && chroma < 16);
+        brightness < 155 && !(brightness > 105 && chroma < 16);
 
       if (looksLikeRealEdge) {
         borderMask[p] = 1;
@@ -733,24 +835,14 @@ export default function VehicleSelector() {
       const g = original[i + 1];
       const b = original[i + 2];
 
-      // Orijinal petek/doku ışığını koru.
-      const luminance =
-        0.2126 * r +
-        0.7152 * g +
-        0.0722 * b;
+      const luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b;
 
-      // Çok koyu hedeflerde bile petek dokusu kaybolmasın.
-      const texture = Math.max(
-        0.5,
-        Math.min(1.35, luminance / 118)
-      );
+      const texture = Math.max(0.5, Math.min(1.35, luminance / 118));
 
       const targetR = Math.min(255, evaRgb.r * texture);
       const targetG = Math.min(255, evaRgb.g * texture);
       const targetB = Math.min(255, evaRgb.b * texture);
 
-      // Orijinal sıcak rengi tamamen bastırıyoruz.
-      // Böylece siyah/lacivert seçildiğinde kırmızı noktalar kalmıyor.
       data[i] = targetR;
       data[i + 1] = targetG;
       data[i + 2] = targetB;
@@ -769,25 +861,15 @@ export default function VehicleSelector() {
       const g = original[i + 1];
       const b = original[i + 2];
 
-      const luminance =
-        0.2126 * r +
-        0.7152 * g +
-        0.0722 * b;
+      const luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b;
 
-      // Biye kumaşındaki gölge / kabarıklık korunur.
-      const texture = Math.max(
-        0.52,
-        Math.min(1.18, luminance / 72)
-      );
+      const texture = Math.max(0.52, Math.min(1.18, luminance / 72));
 
       let targetR = Math.min(255, borderRgb.r * texture);
       let targetG = Math.min(255, borderRgb.g * texture);
       let targetB = Math.min(255, borderRgb.b * texture);
 
-      // Beyaz, krem, sarı gibi açık biyelerde kumaşın görünmesi için
-      // gölgeyi biraz daha koruyoruz.
-      const borderTargetBrightness =
-        (borderRgb.r + borderRgb.g + borderRgb.b) / 3;
+      const borderTargetBrightness = (borderRgb.r + borderRgb.g + borderRgb.b) / 3;
 
       if (borderTargetBrightness > 150) {
         const shadow = Math.max(0.68, Math.min(1, luminance / 95));
@@ -803,103 +885,122 @@ export default function VehicleSelector() {
     }
 
     ctx.putImageData(imageData, 0, 0);
+
+
+    /* =========================
+       TOPUKLUK OVERLAY
+    ========================= */
+
+    if (heelOn && heelImageRef.current) {
+      const heelCanvas = buildHeelOverlay(heelImageRef.current, selectedHeel);
+
+      const heelX = width * HEEL_X_PERCENT;
+      const heelY = height * HEEL_Y_PERCENT;
+      const heelW = width * HEEL_WIDTH_PERCENT;
+
+      const heelAspect =
+        heelImageRef.current.naturalHeight / heelImageRef.current.naturalWidth;
+
+      const heelH = heelW * heelAspect;
+
+      ctx.save();
+      ctx.shadowColor = "rgba(0, 0, 0, 0.20)";
+      ctx.shadowBlur = Math.max(2, width * 0.003);
+      ctx.shadowOffsetY = Math.max(1, height * 0.002);
+
+      ctx.drawImage(heelCanvas, heelX, heelY, heelW, heelH);
+
+      ctx.restore();
+    }
   }
 
   /* =========================
-     WHATSAPP
+     PASPASI SEPETE EKLE
   ========================= */
 
-  function sendWhatsApp() {
-    const evaName =
-      getColorName(
-        evaColors,
-        evaColor
-      );
+  function addMatToCart() {
+    const evaName = getColorName(evaColors, evaColor);
+    const borderName = getColorName(borderColors, borderColor);
+    const threadName = getColorName(threadColors, threadColor);
+    const heelName = getColorName(heelColors, heelColor);
 
-    const borderName =
-      getColorName(
-        borderColors,
-        borderColor
-      );
+    const currentPrice =
+      BASE_PRICE +
+      (logoEnabled ? logoQuantity * LOGO_UNIT_PRICE : 0) +
+      (heelEnabled ? HEEL_PRICE : 0) +
+      (trunkMatEnabled ? TRUNK_MAT_PRICE : 0);
 
-    const threadName =
-      getColorName(
-        threadColors,
-        threadColor
-      );
-
-    const heelName =
-      getColorName(
-        heelColors,
-        heelColor
-      );
-
-    const message = `
-MEYDAN GARAGE - YENİ SİPARİŞ
-
-Araç: ${brand} ${selectedModel}
-Model Yılı: ${modelYear || "Belirtilmedi"}
-Kasa Tipi: ${bodyType || "Belirtilmedi"}
-
-EVA Paspas Rengi: ${evaName}
-Biye Rengi: ${borderName}
-İplik Rengi: ${threadName}
-
-Logo: ${
+    const details = [
+      `Araç: ${brand} ${selectedModel}`,
+      `Model Yılı: ${modelYear || "Belirtilmedi"}`,
+      `Kasa Tipi: ${bodyType || "Belirtilmedi"}`,
+      `EVA Rengi: ${evaName}`,
+      `Biye Rengi: ${borderName}`,
+      `İplik Rengi: ${threadName}`,
       logoEnabled
-        ? `VAR - ${brand} logosu`
-        : "YOK"
-    }
-
-Topukluk: ${
+        ? `Logo: ${brand} · ${logoQuantity} adet · ${(logoQuantity * LOGO_UNIT_PRICE).toLocaleString("tr-TR")} TL`
+        : "Logo: Yok",
+      trunkMatEnabled
+        ? `Bagaj Havuzu: Var · ${TRUNK_MAT_PRICE.toLocaleString("tr-TR")} TL`
+        : "Bagaj Havuzu: Yok",
       heelEnabled
-        ? "VAR"
-        : "YOK"
-    }${
-      heelEnabled
-        ? `\nTopukluk Rengi: ${heelName}`
-        : ""
-    }
+        ? `Topukluk: Var · ${heelName} · ${HEEL_PRICE.toLocaleString("tr-TR")} TL`
+        : "Topukluk: Yok",
+    ];
 
-Meydan Garage web sitesi üzerinden gönderildi.
-`.trim();
+    const items = readCart();
 
-    const url =
-      `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(
-        message
-      )}`;
+    items.push({
+      id: `eva-paspas-${Date.now()}`,
+      name: `EVA Paspas Takımı - ${brand} ${selectedModel}`,
+      price: currentPrice,
+      quantity: 1,
+      image: "/paspas.png",
+      category: "EVA PASPAS",
+      details,
+    });
 
-    window.open(
-      url,
-      "_blank"
-    );
+    writeCart(items);
+    refreshCartCount();
+
+    setAddedToCart(true);
+
+    window.setTimeout(() => {
+      setAddedToCart(false);
+    }, 1500);
   }
 
   /* =========================
      TASARIM EKRANI
   ========================= */
 
-  if (
-    selectedModel &&
-    designMode
-  ) {
+  const currentMatPrice =
+    BASE_PRICE +
+    (logoEnabled ? logoQuantity * LOGO_UNIT_PRICE : 0) +
+    (heelEnabled ? HEEL_PRICE : 0) +
+    (trunkMatEnabled ? TRUNK_MAT_PRICE : 0);
+
+  if (selectedModel && designMode) {
     return (
       <main className="min-h-screen bg-[#171717] px-4 py-8 text-white sm:px-6 lg:px-10">
-
         <div className="mx-auto max-w-[1500px]">
+          <div className="mb-8 flex items-center justify-between gap-4">
+            <button
+              onClick={() => setDesignMode(false)}
+              className="text-sm text-white/50 transition hover:text-white"
+            >
+              ← Araç Bilgilerine Dön
+            </button>
 
-          <button
-            onClick={() =>
-              setDesignMode(false)
-            }
-            className="mb-8 text-sm text-white/50 transition hover:text-white"
-          >
-            ← Araç Bilgilerine Dön
-          </button>
+            <a
+              href="/sepet"
+              className="rounded-full border border-white/15 px-5 py-2 text-[10px] tracking-[0.16em] text-white/70 transition hover:border-white/35 hover:bg-white hover:text-black"
+            >
+              SEPET ({cartCount})
+            </a>
+          </div>
 
-          <p className="text-xs tracking-[0.3em] text-white/35">
-            MEYDAN GARAGE
-          </p>
+          <p className="text-xs tracking-[0.3em] text-white/35">MEYDAN GARAGE</p>
 
           <h1 className="mt-3 text-3xl font-semibold sm:text-4xl">
             Paspasınızı Tasarlayın
@@ -907,60 +1008,41 @@ Meydan Garage web sitesi üzerinden gönderildi.
 
           <p className="mt-3 text-white/45">
             {brand} · {selectedModel}
-
-            {modelYear
-              ? ` · ${modelYear}`
-              : ""}
-
-            {bodyType
-              ? ` · ${bodyType}`
-              : ""}
+            {modelYear ? ` · ${modelYear}` : ""}
+            {bodyType ? ` · ${bodyType}` : ""}
           </p>
 
           <div className="mt-10 grid gap-8 xl:grid-cols-[1.25fr_0.75fr]">
-
             {/* ÖNİZLEME */}
-
             <section className="rounded-[28px] border border-white/10 bg-[#222222] p-5 sm:p-6">
-
               <p className="text-xs tracking-[0.25em] text-white/30">
                 CANLI ÖN İZLEME
               </p>
 
               <p className="mt-2 text-sm text-white/45">
-                EVA ve biye seçimlerinizi canlı olarak görün.
+                EVA, biye ve topukluk seçimlerinizi canlı olarak görün.
               </p>
 
               <div className="mt-6 flex min-h-[450px] items-center justify-center overflow-hidden rounded-2xl bg-[#c7c9cd] p-4">
-
                 <canvas
                   ref={canvasRef}
                   className="block h-auto max-h-[700px] w-full object-contain"
                 />
-
               </div>
 
               <div className="mt-5 rounded-xl border border-white/10 bg-white/[0.03] p-4">
-
                 <p className="text-xs leading-5 text-white/40">
-                  İplik ve topukluk renkleri sipariş bilgisi olarak seçilir.
+                  İplik rengi sipariş bilgisi olarak seçilir.
                   Ön izleme görselinde değiştirilmez.
                 </p>
-
               </div>
-
             </section>
 
             {/* AYARLAR */}
-
             <section className="rounded-[28px] border border-white/10 bg-[#202020] p-5 sm:p-7">
-
-              <h2 className="text-xl font-semibold">
-                Tasarım Seçenekleri
-              </h2>
+              <h2 className="text-xl font-semibold">Tasarım Seçenekleri</h2>
 
               <div className="mt-8 space-y-8">
-
                 <ColorSelector
                   title="EVA Paspas Rengi"
                   colors={evaColors}
@@ -989,20 +1071,13 @@ Meydan Garage web sitesi üzerinden gönderildi.
                 <div className="h-px bg-white/10" />
 
                 {/* LOGO */}
-
                 <div>
-
-                  <p className="mb-3 text-sm text-white/60">
-                    Logo
-                  </p>
+                  <p className="mb-3 text-sm text-white/60">Logo</p>
 
                   <div className="grid grid-cols-2 gap-3">
-
                     <button
                       type="button"
-                      onClick={() =>
-                        setLogoEnabled(false)
-                      }
+                      onClick={() => setLogoEnabled(false)}
                       className={`rounded-xl border p-4 text-sm font-semibold transition ${
                         !logoEnabled
                           ? "border-white bg-white text-black"
@@ -1014,9 +1089,7 @@ Meydan Garage web sitesi üzerinden gönderildi.
 
                     <button
                       type="button"
-                      onClick={() =>
-                        setLogoEnabled(true)
-                      }
+                      onClick={() => setLogoEnabled(true)}
                       className={`rounded-xl border p-4 text-sm font-semibold transition ${
                         logoEnabled
                           ? "border-white bg-white text-black"
@@ -1025,42 +1098,76 @@ Meydan Garage web sitesi üzerinden gönderildi.
                     >
                       VAR
                     </button>
-
                   </div>
 
                   {logoEnabled && (
-                    <div className="mt-3 rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3">
+                    <div className="mt-3 rounded-xl border border-white/10 bg-white/[0.03] p-4">
+                      <p className="text-xs text-white/40">Uygulanacak Logo</p>
+                      <p className="mt-1 font-medium">{brand} Logosu</p>
 
-                      <p className="text-xs text-white/40">
-                        Uygulanacak Logo
-                      </p>
+                      <label className="mt-4 block text-xs text-white/40">
+                        Logo Adedi
+                      </label>
 
-                      <p className="mt-1 font-medium">
-                        {brand} Logosu
-                      </p>
-
+                      <input
+                        type="number"
+                        min={1}
+                        max={6}
+                        value={logoQuantity}
+                        onChange={(e) =>
+                          setLogoQuantity(
+                            Math.max(1, Math.min(6, Number(e.target.value) || 1))
+                          )
+                        }
+                        className="mt-2 w-full rounded-xl border border-white/10 bg-black/20 px-4 py-3 text-white outline-none transition focus:border-white/30"
+                      />
                     </div>
                   )}
+                </div>
 
+                <div className="h-px bg-white/10" />
+
+                {/* BAGAJ HAVUZU */}
+                <div>
+                  <p className="mb-3 text-sm text-white/60">Bagaj Havuzu</p>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setTrunkMatEnabled(false)}
+                      className={`rounded-xl border p-4 text-sm font-semibold transition ${
+                        !trunkMatEnabled
+                          ? "border-white bg-white text-black"
+                          : "border-white/10 bg-white/[0.03] text-white/60"
+                      }`}
+                    >
+                      YOK
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setTrunkMatEnabled(true)}
+                      className={`rounded-xl border p-4 text-sm font-semibold transition ${
+                        trunkMatEnabled
+                          ? "border-white bg-white text-black"
+                          : "border-white/10 bg-white/[0.03] text-white/60"
+                      }`}
+                    >
+                      VAR
+                    </button>
+                  </div>
                 </div>
 
                 <div className="h-px bg-white/10" />
 
                 {/* TOPUKLUK */}
-
                 <div>
-
-                  <p className="mb-3 text-sm text-white/60">
-                    Topukluk
-                  </p>
+                  <p className="mb-3 text-sm text-white/60">Topukluk</p>
 
                   <div className="grid grid-cols-2 gap-3">
-
                     <button
                       type="button"
-                      onClick={() =>
-                        setHeelEnabled(false)
-                      }
+                      onClick={() => setHeelEnabled(false)}
                       className={`rounded-xl border p-4 text-sm font-semibold transition ${
                         !heelEnabled
                           ? "border-white bg-white text-black"
@@ -1072,9 +1179,7 @@ Meydan Garage web sitesi üzerinden gönderildi.
 
                     <button
                       type="button"
-                      onClick={() =>
-                        setHeelEnabled(true)
-                      }
+                      onClick={() => setHeelEnabled(true)}
                       className={`rounded-xl border p-4 text-sm font-semibold transition ${
                         heelEnabled
                           ? "border-white bg-white text-black"
@@ -1083,9 +1188,7 @@ Meydan Garage web sitesi üzerinden gönderildi.
                     >
                       VAR
                     </button>
-
                   </div>
-
                 </div>
 
                 {heelEnabled && (
@@ -1100,125 +1203,137 @@ Meydan Garage web sitesi üzerinden gönderildi.
                 <div className="h-px bg-white/10" />
 
                 {/* ÖZET */}
-
                 <div className="rounded-2xl border border-white/10 bg-black/20 p-5">
-
                   <p className="text-xs tracking-[0.2em] text-white/30">
                     SİPARİŞ ÖZETİ
                   </p>
 
                   <div className="mt-5 space-y-3 text-sm">
-
                     <div className="flex justify-between gap-5">
-                      <span className="text-white/40">
-                        Araç
-                      </span>
-
+                      <span className="text-white/40">Araç</span>
                       <span className="text-right">
                         {brand} {selectedModel}
                       </span>
                     </div>
 
                     <div className="flex justify-between gap-5">
-                      <span className="text-white/40">
-                        EVA
-                      </span>
-
-                      <span>
-                        {getColorName(
-                          evaColors,
-                          evaColor
-                        )}
-                      </span>
+                      <span className="text-white/40">Paspas Takımı</span>
+                      <span>{BASE_PRICE.toLocaleString("tr-TR")} TL</span>
                     </div>
 
                     <div className="flex justify-between gap-5">
-                      <span className="text-white/40">
-                        Biye
-                      </span>
-
-                      <span>
-                        {getColorName(
-                          borderColors,
-                          borderColor
-                        )}
-                      </span>
+                      <span className="text-white/40">EVA</span>
+                      <span>{getColorName(evaColors, evaColor)}</span>
                     </div>
 
                     <div className="flex justify-between gap-5">
-                      <span className="text-white/40">
-                        İplik
-                      </span>
-
-                      <span>
-                        {getColorName(
-                          threadColors,
-                          threadColor
-                        )}
-                      </span>
+                      <span className="text-white/40">Biye</span>
+                      <span>{getColorName(borderColors, borderColor)}</span>
                     </div>
 
                     <div className="flex justify-between gap-5">
-                      <span className="text-white/40">
-                        Logo
-                      </span>
+                      <span className="text-white/40">İplik</span>
+                      <span>{getColorName(threadColors, threadColor)}</span>
+                    </div>
 
+                    <div className="flex justify-between gap-5">
+                      <span className="text-white/40">Logo</span>
                       <span>
                         {logoEnabled
-                          ? `${brand} Logo`
+                          ? `${brand} Logo · ${logoQuantity} adet · ${(
+                              logoQuantity * LOGO_UNIT_PRICE
+                            ).toLocaleString("tr-TR")} TL`
                           : "Yok"}
                       </span>
                     </div>
 
                     <div className="flex justify-between gap-5">
-                      <span className="text-white/40">
-                        Topukluk
+                      <span className="text-white/40">Bagaj Havuzu</span>
+                      <span>
+                        {trunkMatEnabled
+                          ? `Var · ${TRUNK_MAT_PRICE.toLocaleString("tr-TR")} TL`
+                          : "Yok"}
                       </span>
+                    </div>
 
+                    <div className="flex justify-between gap-5">
+                      <span className="text-white/40">Topukluk</span>
                       <span>
                         {heelEnabled
-                          ? "Var"
+                          ? `Var · ${HEEL_PRICE.toLocaleString("tr-TR")} TL`
                           : "Yok"}
                       </span>
                     </div>
 
                     {heelEnabled && (
                       <div className="flex justify-between gap-5">
-                        <span className="text-white/40">
-                          Topukluk Rengi
-                        </span>
+                        <span className="text-white/40">Topukluk Rengi</span>
+                        <span>{getColorName(heelColors, heelColor)}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
 
+                <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-5">
+                  <div className="flex items-end justify-between gap-5">
+                    <span className="text-sm text-white/50">Paspas Toplamı</span>
+
+                    <span className="text-2xl font-semibold">
+                      {currentMatPrice.toLocaleString("tr-TR")} TL
+                    </span>
+                  </div>
+
+                  <div className="mt-4 space-y-2 border-t border-white/10 pt-4 text-xs text-white/40">
+                    <div className="flex justify-between gap-4">
+                      <span>Düz Paspas Takımı</span>
+                      <span>{BASE_PRICE.toLocaleString("tr-TR")} TL</span>
+                    </div>
+
+                    {logoEnabled && (
+                      <div className="flex justify-between gap-4">
+                        <span>Logo · {logoQuantity} adet</span>
                         <span>
-                          {getColorName(
-                            heelColors,
-                            heelColor
-                          )}
+                          {(logoQuantity * LOGO_UNIT_PRICE).toLocaleString("tr-TR")} TL
                         </span>
                       </div>
                     )}
 
+                    {heelEnabled && (
+                      <div className="flex justify-between gap-4">
+                        <span>Topukluk</span>
+                        <span>{HEEL_PRICE.toLocaleString("tr-TR")} TL</span>
+                      </div>
+                    )}
                   </div>
 
+                  {trunkMatEnabled && (
+                    <div className="mt-2 flex justify-between gap-4 text-xs text-white/40">
+                      <span>Bagaj Havuzu</span>
+                      <span>{TRUNK_MAT_PRICE.toLocaleString("tr-TR")} TL</span>
+                    </div>
+                  )}
                 </div>
-
-                {/* WHATSAPP */}
 
                 <button
                   type="button"
-                  onClick={sendWhatsApp}
-                  className="w-full rounded-full bg-[#25D366] px-6 py-4 text-sm font-bold text-black transition hover:scale-[1.01]"
+                  onClick={addMatToCart}
+                  className={`w-full rounded-full px-6 py-4 text-sm font-bold text-black transition hover:scale-[1.01] ${
+                    addedToCart ? "bg-[#25D366]" : "bg-white"
+                  }`}
                 >
-                  WHATSAPP'TAN SİPARİŞ VER →
+                  {addedToCart ? "SEPETE EKLENDİ ✓" : "SEPETE EKLE →"}
                 </button>
 
+                <a
+                  href="/sepet"
+                  className="flex w-full justify-center rounded-full border border-white/10 px-6 py-4 text-xs font-semibold tracking-[0.08em] text-white/60 transition hover:border-white/30 hover:text-white"
+                >
+                  SEPETİ GÖR ({cartCount})
+                </a>
               </div>
-
             </section>
-
           </div>
-
         </div>
-
       </main>
     );
   }
@@ -1230,21 +1345,15 @@ Meydan Garage web sitesi üzerinden gönderildi.
   if (other) {
     return (
       <main className="min-h-screen bg-black px-6 py-16 text-white">
-
         <div className="mx-auto max-w-5xl">
-
           <button
-            onClick={() =>
-              setOther(false)
-            }
+            onClick={() => setOther(false)}
             className="mb-10 text-white/50 transition hover:text-white"
           >
             ← Geri
           </button>
 
-          <p className="text-sm tracking-widest text-white/40">
-            MEYDAN GARAGE
-          </p>
+          <p className="text-sm tracking-widest text-white/40">MEYDAN GARAGE</p>
 
           <h1 className="mt-6 text-4xl font-bold sm:text-5xl">
             Aracım Listede Yok
@@ -1255,83 +1364,51 @@ Meydan Garage web sitesi üzerinden gönderildi.
           </p>
 
           <div className="mt-10 max-w-xl space-y-4">
-
             <input
               value={customBrand}
-              onChange={(e) =>
-                setCustomBrand(
-                  e.target.value
-                )
-              }
+              onChange={(e) => setCustomBrand(e.target.value)}
               placeholder="Marka"
               className="w-full rounded-xl border border-white/10 bg-white/10 p-4 outline-none transition focus:border-white/30"
             />
 
             <input
               value={customModel}
-              onChange={(e) =>
-                setCustomModel(
-                  e.target.value
-                )
-              }
+              onChange={(e) => setCustomModel(e.target.value)}
               placeholder="Model"
               className="w-full rounded-xl border border-white/10 bg-white/10 p-4 outline-none transition focus:border-white/30"
             />
 
             <input
               value={modelYear}
-              onChange={(e) =>
-                setModelYear(
-                  e.target.value
-                )
-              }
+              onChange={(e) => setModelYear(e.target.value)}
               placeholder="Model yılı"
               className="w-full rounded-xl border border-white/10 bg-white/10 p-4 outline-none transition focus:border-white/30"
             />
 
             <input
               value={bodyType}
-              onChange={(e) =>
-                setBodyType(
-                  e.target.value
-                )
-              }
+              onChange={(e) => setBodyType(e.target.value)}
               placeholder="Kasa tipi"
               className="w-full rounded-xl border border-white/10 bg-white/10 p-4 outline-none transition focus:border-white/30"
             />
 
             <button
               onClick={() => {
-                if (
-                  !customBrand ||
-                  !customModel
-                ) {
-                  alert(
-                    "Lütfen marka ve model bilgilerini girin."
-                  );
-
+                if (!customBrand || !customModel) {
+                  alert("Lütfen marka ve model bilgilerini girin.");
                   return;
                 }
 
-                setBrand(
-                  customBrand
-                );
-
-                setSelectedModel(
-                  customModel
-                );
-
+                setBrand(customBrand);
+                setSelectedModel(customModel);
                 setOther(false);
               }}
               className="w-full rounded-xl bg-white p-4 font-bold text-black transition hover:bg-white/90"
             >
               ARACIMI SEÇ
             </button>
-
           </div>
-
         </div>
-
       </main>
     );
   }
@@ -1343,9 +1420,7 @@ Meydan Garage web sitesi üzerinden gönderildi.
   if (selectedModel) {
     return (
       <main className="min-h-screen bg-black px-6 py-16 text-white">
-
         <div className="mx-auto max-w-5xl">
-
           <button
             onClick={() => {
               setSelectedModel("");
@@ -1356,116 +1431,76 @@ Meydan Garage web sitesi üzerinden gönderildi.
             ← Modellere Dön
           </button>
 
-          <p className="text-sm tracking-widest text-white/40">
-            MEYDAN GARAGE
-          </p>
+          <p className="text-sm tracking-widest text-white/40">MEYDAN GARAGE</p>
 
-          <h1 className="mt-6 text-4xl font-bold sm:text-5xl">
-            {brand}
-          </h1>
+          <h1 className="mt-6 text-4xl font-bold sm:text-5xl">{brand}</h1>
 
-          <p className="mt-3 text-2xl text-white/50">
-            {selectedModel}
-          </p>
+          <p className="mt-3 text-2xl text-white/50">{selectedModel}</p>
 
           <div className="mt-12 grid gap-5 md:grid-cols-2">
-
             <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-7">
-
-              <p className="text-xs tracking-[0.25em] text-white/30">
-                ARAÇ
-              </p>
+              <p className="text-xs tracking-[0.25em] text-white/30">ARAÇ</p>
 
               <h2 className="mt-4 text-xl">
                 {brand} {selectedModel}
               </h2>
 
-              <p className="mt-2 text-sm text-white/40">
-                Seçtiğiniz araç
-              </p>
-
+              <p className="mt-2 text-sm text-white/40">Seçtiğiniz araç</p>
             </div>
 
             <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-7">
-
               <p className="text-xs tracking-[0.25em] text-white/30">
                 BAŞLANGIÇ FİYATI
               </p>
 
               <h2 className="mt-4 text-2xl font-semibold">
-                {BASE_PRICE > 0
-                  ? `${BASE_PRICE.toLocaleString(
-                      "tr-TR"
-                    )} TL`
-                  : "Fiyat belirlenecek"}
+                {BASE_PRICE.toLocaleString("tr-TR")} TL
               </h2>
 
               <p className="mt-2 text-sm text-white/40">
-                Toplam fiyat daha sonra burada gösterilecek.
+                Logo ve topukluk seçimleri toplam fiyata eklenir.
               </p>
-
             </div>
-
           </div>
 
           <div className="mt-8 grid gap-5 md:grid-cols-2">
-
             <div>
-
               <label className="mb-3 block text-sm text-white/50">
                 Model Yılı
               </label>
 
               <input
                 value={modelYear}
-                onChange={(e) =>
-                  setModelYear(
-                    e.target.value
-                  )
-                }
+                onChange={(e) => setModelYear(e.target.value)}
                 placeholder="Örn. 2024"
                 className="w-full rounded-xl border border-white/10 bg-white/5 p-4 outline-none transition focus:border-white/30"
               />
-
             </div>
 
             <div>
-
               <label className="mb-3 block text-sm text-white/50">
                 Kasa Tipi
               </label>
 
               <input
                 value={bodyType}
-                onChange={(e) =>
-                  setBodyType(
-                    e.target.value
-                  )
-                }
+                onChange={(e) => setBodyType(e.target.value)}
                 placeholder="Örn. Sedan"
                 className="w-full rounded-xl border border-white/10 bg-white/5 p-4 outline-none transition focus:border-white/30"
               />
-
             </div>
-
           </div>
 
           <div className="mt-10">
-
             <button
               type="button"
-              onClick={() =>
-                setDesignMode(true)
-              }
+              onClick={() => setDesignMode(true)}
               className="inline-flex rounded-full bg-white px-9 py-4 text-sm font-semibold text-black transition hover:scale-105 hover:bg-white/90"
             >
               TASARIMA GEÇ →
             </button>
-
           </div>
-
         </div>
-
       </main>
     );
   }
@@ -1480,7 +1515,6 @@ Meydan Garage web sitesi üzerinden gönderildi.
     return (
       <main className="min-h-screen bg-black px-6 py-16 text-white">
         <div className="mx-auto max-w-6xl">
-
           <button
             onClick={() => setBrand("")}
             className="mb-10 text-sm text-white/50 transition hover:text-white"
@@ -1488,20 +1522,13 @@ Meydan Garage web sitesi üzerinden gönderildi.
             ← Markalara Dön
           </button>
 
-          <p className="text-sm tracking-widest text-white/40">
-            MEYDAN GARAGE
-          </p>
+          <p className="text-sm tracking-widest text-white/40">MEYDAN GARAGE</p>
 
-          <h1 className="mt-6 text-5xl font-bold">
-            {brand}
-          </h1>
+          <h1 className="mt-6 text-5xl font-bold">{brand}</h1>
 
-          <p className="mt-4 text-white/50">
-            Modelinizi seçin.
-          </p>
+          <p className="mt-4 text-white/50">Modelinizi seçin.</p>
 
           <div className="mt-10 grid grid-cols-1 gap-5 sm:grid-cols-2 md:grid-cols-3">
-
             {brandModels.map((model) => (
               <button
                 key={model}
@@ -1521,9 +1548,7 @@ Meydan Garage web sitesi üzerinden gönderildi.
                   {brand.toUpperCase()}
                 </p>
 
-                <h2 className="mt-1 text-xl font-medium text-white">
-                  {model}
-                </h2>
+                <h2 className="mt-1 text-xl font-medium text-white">{model}</h2>
               </button>
             ))}
 
@@ -1544,15 +1569,12 @@ Meydan Garage web sitesi üzerinden gönderildi.
                 MODEL
               </p>
 
-              <h2 className="mt-1 text-xl font-medium text-white">
-                Diğer
-              </h2>
+              <h2 className="mt-1 text-xl font-medium text-white">Diğer</h2>
 
               <p className="mt-2 text-sm text-white/40">
                 Modelim listede yok
               </p>
             </button>
-
           </div>
         </div>
       </main>
@@ -1565,82 +1587,68 @@ Meydan Garage web sitesi üzerinden gönderildi.
 
   return (
     <main className="min-h-screen bg-black px-6 py-16 text-white">
-
       <div className="mx-auto max-w-6xl">
+        <div className="flex items-center justify-between gap-4">
+          <a
+            href="/"
+            className="text-sm text-white/45 transition hover:text-white"
+          >
+            ← Ana Sayfa
+          </a>
 
-        <p className="text-sm tracking-widest text-white/40">
-          MEYDAN GARAGE
-        </p>
+          <a
+            href="/sepet"
+            className="rounded-full border border-white/15 px-5 py-2 text-[10px] tracking-[0.16em] text-white/70 transition hover:border-white/35 hover:bg-white hover:text-black"
+          >
+            SEPET ({cartCount})
+          </a>
+        </div>
 
-        <h1 className="mt-6 text-5xl font-bold">
-          Aracınızı Seçin
-        </h1>
+        <p className="mt-10 text-sm tracking-widest text-white/40">MEYDAN GARAGE</p>
+
+        <h1 className="mt-6 text-5xl font-bold">Aracınızı Seçin</h1>
 
         <p className="mt-4 text-white/50">
           Önce aracınızın markasını seçin.
         </p>
 
         <div className="mt-10 grid grid-cols-2 gap-4 md:grid-cols-4">
+          {brands.map((item) => (
+            <button
+              key={item}
+              onClick={() => setBrand(item)}
+              className="rounded-2xl border border-white/20 bg-black p-8 transition duration-300 hover:border-white/50 hover:bg-white/[0.03]"
+            >
+              <div className="mx-auto flex h-28 w-full items-center justify-center bg-black">
+                <img
+                  src={brandLogos[item]}
+                  alt={`${item} logo`}
+                  className="h-24 w-full object-contain"
+                />
+              </div>
 
-          {brands.map(
-            (item) => (
-              <button
-                key={item}
-                onClick={() =>
-                  setBrand(item)
-                }
-                className="rounded-2xl border border-white/20 bg-black p-8 transition duration-300 hover:border-white/50 hover:bg-white/[0.03]"
-              >
-
-                <div className="mx-auto flex h-28 w-full items-center justify-center bg-black">
-
-                  <img
-                    src={brandLogos[item]}
-                    alt={`${item} logo`}
-                    className="h-24 w-full object-contain"
-                  />
-
-                </div>
-
-                <h2 className="mt-6 text-lg font-medium">
-                  {item}
-                </h2>
-
-              </button>
-            )
-          )}
+              <h2 className="mt-6 text-lg font-medium">{item}</h2>
+            </button>
+          ))}
 
           <button
-            onClick={() =>
-              setOther(true)
-            }
+            onClick={() => setOther(true)}
             className="rounded-2xl border border-white/20 bg-black p-8 transition duration-300 hover:border-white/50 hover:bg-white/[0.03]"
           >
-
             <div className="mx-auto flex h-28 w-full items-center justify-center bg-black">
-
               <img
                 src="/diger.png"
                 alt="Diğer"
                 className="h-24 w-full object-contain"
               />
-
             </div>
 
-            <h2 className="mt-6 text-lg font-medium">
-              Diğer
-            </h2>
+            <h2 className="mt-6 text-lg font-medium">Diğer</h2>
 
-            <p className="mt-2 text-sm text-white/40">
-              Aracım listede yok
-            </p>
-
+            <p className="mt-2 text-sm text-white/40">Aracım listede yok</p>
           </button>
-
         </div>
-
       </div>
-
     </main>
   );
 }
