@@ -1111,12 +1111,16 @@ export default function VehicleSelector() {
 
                       <input
                         type="number"
-                        min={1}
+                        min={0}
                         max={6}
+                        step={1}
                         value={logoQuantity}
                         onChange={(e) =>
                           setLogoQuantity(
-                            Math.max(1, Math.min(6, Number(e.target.value) || 1))
+                            Math.max(
+                              0,
+                              Math.min(6, Math.floor(Number(e.target.value) || 0))
+                            )
                           )
                         }
                         className="mt-2 w-full rounded-xl border border-white/10 bg-black/20 px-4 py-3 text-white outline-none transition focus:border-white/30"

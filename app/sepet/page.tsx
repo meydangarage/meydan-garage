@@ -96,6 +96,24 @@ export default function CartPage() {
   const [items, setItems] = useState<CartItem[]>([]);
 
   useEffect(() => {
+    /*
+      Telefonda sayfanın masaüstü genişliğinde açılmasını engeller.
+      Normalde bu ayar app/layout.tsx içinde bulunur; burada da güvenceye
+      alındığı için sepet sayfası her telefonda ekran genişliğine oturur.
+    */
+    let viewport = document.querySelector<HTMLMetaElement>(
+      'meta[name="viewport"]'
+    );
+
+    if (!viewport) {
+      viewport = document.createElement("meta");
+      viewport.name = "viewport";
+      document.head.appendChild(viewport);
+    }
+
+    viewport.content =
+      "width=device-width, initial-scale=1, maximum-scale=5, viewport-fit=cover";
+
     setItems(readCart());
   }, []);
 
@@ -242,8 +260,8 @@ export default function CartPage() {
   }
 
   return (
-    <main className="min-h-screen bg-[#090909] px-4 py-8 text-white sm:px-6 lg:px-10">
-      <div className="mx-auto max-w-6xl">
+    <main className="min-h-screen w-full max-w-full overflow-x-hidden bg-[#090909] px-4 py-6 text-white sm:px-6 sm:py-8 lg:px-10">
+      <div className="mx-auto w-full min-w-0 max-w-6xl">
 
         {/* ÜST ALAN */}
         <div className="flex flex-col gap-6 border-b border-white/10 pb-8 sm:flex-row sm:items-end sm:justify-between">
@@ -259,7 +277,7 @@ export default function CartPage() {
               MEYDAN GARAGE
             </p>
 
-            <h1 className="mt-3 text-4xl font-semibold sm:text-5xl">
+            <h1 className="mt-3 text-3xl font-semibold sm:text-5xl">
               Sepetiniz
             </h1>
 
@@ -310,17 +328,17 @@ export default function CartPage() {
             </div>
           </div>
         ) : (
-          <div className="mt-10 grid gap-8 lg:grid-cols-[1fr_380px]">
+          <div className="mt-8 grid min-w-0 grid-cols-1 gap-8 lg:mt-10 lg:grid-cols-[minmax(0,1fr)_380px]">
 
             {/* ÜRÜNLER */}
-            <div className="space-y-4">
+            <div className="min-w-0 space-y-4">
               {items.map((item) => (
                 <div
                   key={item.id}
-                  className="grid gap-5 rounded-[24px] border border-white/10 bg-white/[0.025] p-4 sm:grid-cols-[150px_1fr]"
+                  className="grid min-w-0 grid-cols-1 gap-5 overflow-hidden rounded-[20px] border border-white/10 bg-white/[0.025] p-3 sm:grid-cols-[150px_minmax(0,1fr)] sm:rounded-[24px] sm:p-4"
                 >
                   {/* GÖRSEL */}
-                  <div className="flex h-36 items-center justify-center overflow-hidden rounded-2xl bg-[#171717]">
+                  <div className="flex h-48 w-full min-w-0 items-center justify-center overflow-hidden rounded-2xl bg-[#171717] sm:h-36">
                     <img
                       src={item.image}
                       alt={item.name}
@@ -331,12 +349,12 @@ export default function CartPage() {
                   {/* BİLGİ */}
                   <div className="flex min-w-0 flex-col">
                     <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                      <div>
+                      <div className="min-w-0">
                         <p className="text-[9px] tracking-[0.22em] text-white/30">
                           {item.category}
                         </p>
 
-                        <h2 className="mt-2 text-lg font-medium">
+                        <h2 className="mt-2 break-words text-lg font-medium">
                           {item.name}
                         </h2>
 
@@ -345,7 +363,7 @@ export default function CartPage() {
                             {item.details.map((detail, index) => (
                               <p
                                 key={`${item.id}-${index}`}
-                                className="text-xs leading-5 text-white/40"
+                                className="break-words text-xs leading-5 text-white/40"
                               >
                                 {detail}
                               </p>
@@ -372,7 +390,7 @@ export default function CartPage() {
                     </div>
 
                     {/* ADET / SİL */}
-                    <div className="mt-auto flex flex-wrap items-center justify-between gap-4 pt-6">
+                    <div className="mt-auto flex w-full flex-wrap items-center justify-between gap-4 pt-6">
                       <div className="flex items-center overflow-hidden rounded-full border border-white/10">
                         <button
                           type="button"
@@ -425,7 +443,7 @@ export default function CartPage() {
                     MEYDAN GARAGE
                   </p>
 
-                  <h2 className="mt-2 text-2xl font-semibold">
+                  <h2 className="mt-2 text-xl font-semibold sm:text-2xl">
                     İlginizi Çekebilecek Ürünler
                   </h2>
 
@@ -435,7 +453,7 @@ export default function CartPage() {
                 </div>
 
                 <div
-                  className="flex gap-4 overflow-x-auto pb-3 pr-2 snap-x snap-mandatory"
+                  className="flex w-full max-w-full gap-4 overflow-x-auto overscroll-x-contain pb-3 pr-2 snap-x snap-mandatory"
                   style={{
                     scrollbarWidth: "thin",
                   }}
@@ -448,7 +466,7 @@ export default function CartPage() {
                     .map((product) => (
                       <div
                         key={product.id}
-                        className="group min-w-[78%] snap-start overflow-hidden rounded-[20px] border border-white/10 bg-white/[0.025] sm:min-w-[46%] lg:min-w-[calc(25%-12px)]"
+                        className="group w-[82%] min-w-[82%] max-w-[310px] shrink-0 snap-start overflow-hidden rounded-[20px] border border-white/10 bg-white/[0.025] sm:w-[46%] sm:min-w-[46%] lg:w-[calc(25%-12px)] lg:min-w-[calc(25%-12px)]"
                       >
                         <div className="h-40 overflow-hidden bg-[#151515]">
                           <img
@@ -486,17 +504,17 @@ export default function CartPage() {
                 </div>
               </section>
 
-              <div className="flex flex-wrap gap-3 pt-4">
+              <div className="grid grid-cols-1 gap-3 pt-4 sm:flex sm:flex-wrap">
                 <a
                   href="/#urunler"
-                  className="rounded-full border border-white/10 px-5 py-3 text-xs font-medium text-white/55 transition hover:border-white/30 hover:text-white"
+                  className="w-full rounded-full border border-white/10 px-5 py-3 text-center text-xs font-medium text-white/55 transition hover:border-white/30 hover:text-white sm:w-auto"
                 >
                   + TÜM ÜRÜNLERİ GÖR
                 </a>
 
                 <a
                   href="/arac-sec"
-                  className="rounded-full border border-white/10 px-5 py-3 text-xs font-medium text-white/55 transition hover:border-white/30 hover:text-white"
+                  className="w-full rounded-full border border-white/10 px-5 py-3 text-center text-xs font-medium text-white/55 transition hover:border-white/30 hover:text-white sm:w-auto"
                 >
                   + PASPAS TASARLA
                 </a>
@@ -504,7 +522,7 @@ export default function CartPage() {
             </div>
 
             {/* SİPARİŞ ÖZETİ */}
-            <aside className="h-fit rounded-[28px] border border-white/10 bg-[#151515] p-6 lg:sticky lg:top-6">
+            <aside className="h-fit w-full min-w-0 overflow-hidden rounded-[22px] border border-white/10 bg-[#151515] p-4 sm:rounded-[28px] sm:p-6 lg:sticky lg:top-6">
               <p className="text-xs tracking-[0.22em] text-white/30">
                 SİPARİŞ ÖZETİ
               </p>
@@ -524,7 +542,7 @@ export default function CartPage() {
                     Genel Toplam
                   </span>
 
-                  <span className="text-2xl font-semibold">
+                  <span className="shrink-0 text-xl font-semibold sm:text-2xl">
                     {total.toLocaleString("tr-TR")} TL
                   </span>
                 </div>
@@ -542,7 +560,7 @@ export default function CartPage() {
               <button
                 type="button"
                 onClick={sendOrderToWhatsApp}
-                className="mt-6 w-full rounded-full bg-[#25D366] px-6 py-4 text-sm font-bold text-black transition hover:scale-[1.01]"
+                className="mt-6 w-full whitespace-normal rounded-full bg-[#25D366] px-4 py-4 text-xs font-bold text-black transition hover:scale-[1.01] sm:px-6 sm:text-sm"
               >
                 SEPETİ ONAYLA & WHATSAPP →
               </button>
