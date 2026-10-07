@@ -51,6 +51,7 @@ const brands = [
   "Renault",
   "Peugeot",
   "Opel",
+  "Honda",
 ];
 
 const brandLogos: Record<string, string> = {
@@ -64,6 +65,7 @@ const brandLogos: Record<string, string> = {
   Renault: "/renault.png",
   Peugeot: "/peugeot.png",
   Opel: "/opel.png",
+  Honda: "/honda.png",
 };
 
 /* =========================
@@ -71,6 +73,7 @@ const brandLogos: Record<string, string> = {
 ========================= */
 
 const models: Record<string, string[]> = {
+  Honda: ["CR-V", "HR-V", "City", "Jazz", "Civic", "Accord"],
   Audi: ["A3", "A4", "A5", "A6", "Q2", "Q3", "Q5", "Q7"],
 
   BMW: [
@@ -164,6 +167,17 @@ const models: Record<string, string[]> = {
 };
 
 function getModelImage(brand: string, model: string) {
+  const hondaModelImages: Record<string, string> = {
+    "CR-V": "/cr-v.png",
+    "HR-V": "/hr-v.png",
+    City: "/cıty.png",
+    Jazz: "/jazz.png",
+    Civic: "/cıvıc.png",
+    Accord: "/accord.png",
+  };
+
+  if (brand === "Honda" && hondaModelImages[model]) return hondaModelImages[model];
+
   const bmwModelImages: Record<string, string> = {
     "1 Serisi": "/1serisi.png",
     "2 Serisi": "/2serisi.png",
